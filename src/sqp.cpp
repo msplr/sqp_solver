@@ -1,7 +1,7 @@
 #include <Eigen/Eigenvalues>
 #include <cmath>
 #include <iostream>
-#include <solvers/SQP.hpp>
+#include <solvers/sqp.hpp>
 #include <solvers/bfgs.hpp>
 #include <solvers/qp_solver.hpp>
 
@@ -91,8 +91,6 @@ void SQP<T>::_solve(Problem& prob) {
 
     p.resize(nx);
     p_lambda.resize(nc);
-    _x.resize(nx);
-    _lambda.resize(nc);
     _step_prev.resize(nx);
     _grad_L.resize(nx);
 
@@ -100,8 +98,8 @@ void SQP<T>::_solve(Problem& prob) {
     A_eq.resize(neq, nx);
     b_ineq.resize(nineq);
     A_ineq.resize(nineq, nx);
-    lbx.resize(nx);
-    ubx.resize(nx);
+    lb_.resize(nx);
+    ub_.resize(nx);
 
     P.resize(nx, nx);
     q.resize(nx);
@@ -113,9 +111,11 @@ void SQP<T>::_solve(Problem& prob) {
     int& iter = _info.iter;
     for (iter = 1; iter <= _settings.max_iter; iter++) {
         // Solve QP
+        printf("solve_qp\n");
         solve_qp(prob, p, p_lambda);
         p_lambda -= _lambda;
 
+        printf("line_search\n");
         alpha = line_search(prob, p);
 
         // take step
@@ -136,6 +136,8 @@ void SQP<T>::_solve(Problem& prob) {
             break;
         }
         printf("iter %d\n", iter);
+        std::cout << "x " << _x.transpose() << std::endl;
+        std::cout << "y " << _lambda.transpose() << std::endl;
     }
     printf("DONE iter %d\n", iter);
     if (iter > _settings.max_iter) {
@@ -199,12 +201,11 @@ void SQP<T>::solve_qp(Problem& prob, Vector& p, Vector& lambda) {
     Matrix& B = P;
 
     prob.objective_linearized(_x, grad_f, _cost);
-    prob.constraint_linearized(_x, A_eq, b_eq, A_ineq, b_ineq, lbx, ubx);
+    prob.constraint_linearized(_x, A_eq, b_eq, A_ineq, b_ineq, lb_, ub_);
 
     Eigen::Ref<Vector> lambda_eq = _lambda.segment(EQ_IDX, prob.num_eq);
     Eigen::Ref<Vector> lambda_ineq = _lambda.segment(INEQ_IDX, prob.num_ineq);
     Eigen::Ref<Vector> lambda_box = _lambda.segment(BOX_IDX, prob.num_var);
-    printf("Ref\n");
 
     Vector y = -_grad_L;
     _grad_L = grad_f + A_eq.transpose() * lambda_eq + A_ineq.transpose() * lambda_ineq + lambda_box;
@@ -218,6 +219,7 @@ void SQP<T>::solve_qp(Problem& prob, Vector& p, Vector& lambda) {
         BFGS_update(B, _step_prev, y);
         SOLVER_ASSERT(_is_posdef(B));
     }
+    std::cout << B << std::endl;
 
     Vector l, u;
     l.resize(nc);
@@ -241,8 +243,8 @@ void SQP<T>::solve_qp(Problem& prob, Vector& p, Vector& lambda) {
     // Box constraints
     // from     l <= x + p <= u
     // to     l-x <= p     <= u-x
-    u.segment(BOX_IDX, prob.num_var) = ubx - _x;
-    l.segment(BOX_IDX, prob.num_var) = lbx - _x;
+    u.segment(BOX_IDX, prob.num_var) = ub_ - _x;
+    l.segment(BOX_IDX, prob.num_var) = lb_ - _x;
     A.block(BOX_IDX, 0, prob.num_var, prob.num_var).setIdentity();
 
     printf("QPSolver\n");
@@ -256,7 +258,6 @@ void SQP<T>::solve_qp(Problem& prob, Vector& p, Vector& lambda) {
 /** Line search in direction p using l1 merit function. */
 template <typename T>
 typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
-    printf("line_search\n");
     // Note: using members _cost and q, which are updated in solve_qp().
 
     Scalar mu, phi_l1, Dp_phi_l1;
@@ -268,12 +269,14 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
     // TODO: get mu from merit function model using hessian of Lagrangian
     mu = cost_gradient.dot(p) / ((1 - _settings.rho) * constr_l1);
 
+    mu = fmax(0, mu);
+    // mu *= 1e+2;
+
     phi_l1 = _cost + mu * constr_l1;
     Dp_phi_l1 = cost_gradient.dot(p) - mu * constr_l1;
 
     Scalar alpha = 1.0;
     for (int i = 1; i < _settings.line_search_max_iter; i++) {
-        printf("alpha %f\n", alpha);
         Scalar cost_step;
         Vector x_step = _x + alpha * p;
         prob.objective(x_step, cost_step);
@@ -286,6 +289,7 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
             alpha = tau * alpha;
         }
     }
+    printf("alpha %f  mu %f\n", alpha, mu);
     return alpha;
 }
 
@@ -295,9 +299,9 @@ typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) 
     Scalar cl1 = DIV_BY_ZERO_REGUL;
     Vector c_eq;
     Vector c_ineq;
-    Vector lbx, ubx;
+    Vector lb_, ub_;
 
-    prob.constraint(x, c_eq, c_ineq, lbx, ubx);
+    prob.constraint(x, c_eq, c_ineq, lb_, ub_);
 
     // c_eq = 0
     cl1 += c_eq.template lpNorm<1>();
@@ -306,8 +310,8 @@ typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) 
     cl1 += c_ineq.cwiseMax(0.0).sum();
 
     // l <= x <= u
-    cl1 += (lbx - x).cwiseMax(0.0).sum();
-    cl1 += (x - ubx).cwiseMax(0.0).sum();
+    cl1 += (lb_ - x).cwiseMax(0.0).sum();
+    cl1 += (x - ub_).cwiseMax(0.0).sum();
 
     return cl1;
 }
@@ -318,9 +322,9 @@ typename SQP<T>::Scalar SQP<T>::max_constraint_violation(const Vector& x, Proble
     Scalar c = 0;
     Vector c_eq;
     Vector c_ineq;
-    Vector lbx, ubx;
+    Vector lb_, ub_;
 
-    prob.constraint(x, c_eq, c_ineq, lbx, ubx);
+    prob.constraint(x, c_eq, c_ineq, lb_, ub_);
 
     // c_eq = 0
     if (prob.num_eq > 0) {
@@ -333,8 +337,8 @@ typename SQP<T>::Scalar SQP<T>::max_constraint_violation(const Vector& x, Proble
     }
 
     // l <= x <= u
-    c = fmax(c, (lbx - x).maxCoeff());
-    c = fmax(c, (x - ubx).maxCoeff());
+    c = fmax(c, (lb_ - x).maxCoeff());
+    c = fmax(c, (x - ub_).maxCoeff());
 
     return c;
 }

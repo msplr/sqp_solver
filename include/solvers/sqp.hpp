@@ -35,7 +35,7 @@ struct sqp_info_t {
 };
 
 template <typename Scalar_ = double>
-class Problem {
+struct NonLinearProblem {
    public:
     using Scalar = Scalar_;
     using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
@@ -45,8 +45,8 @@ class Problem {
     int num_ineq;
     int num_eq;
 
-    virtual void objective(const Vector& x, Scalar& cst) = 0;
-    virtual void objective_linearized(const Vector& x, Vector& grad, Scalar& cst) = 0;
+    virtual void objective(const Vector& x, Scalar& obj) = 0;
+    virtual void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) = 0;
     virtual void constraint(const Vector& x, Vector& b_eq, Vector& b_ineq, Vector& lb,
                             Vector& ub) = 0;
     virtual void constraint_linearized(const Vector& x, Matrix& A_eq, Vector& b_eq, Matrix& A_ineq,
@@ -65,7 +65,7 @@ class SQP {
     using Scalar = Scalar_;
     using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-    using Problem = Problem<Scalar>;
+    using Problem = NonLinearProblem<Scalar>;
 
     using settings_t = sqp_settings_t<Scalar>;
 
@@ -108,7 +108,7 @@ class SQP {
     Matrix A_eq;
     Vector b_ineq;
     Matrix A_ineq;
-    Vector lbx, ubx;
+    Vector lb_, ub_;
 
     Matrix P;
     Matrix A;
