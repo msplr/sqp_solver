@@ -15,43 +15,32 @@ struct SimpleNLP : public NonLinearProblem<double> {
 
     SimpleNLP() {
         num_var = 2;
-        num_ineq = 2;
-        num_eq = 0;
+        num_constr = 3;
     }
 
-    void objective(const Vector& x, Scalar& cst) {
-        // printf("objective\n");
-        cst = -x(0) - x(1);
-    }
+    void objective(const Vector& x, Scalar& obj) { obj = -x(0) - x(1); }
 
-    void objective_linearized(const Vector& x, Vector& grad, Scalar& cst) {
-        // printf("objective_linearized\n");
-        grad.resize(2);
+    void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) {
+        grad.resize(num_var);
 
-        objective(x, cst);
+        objective(x, obj);
         grad << -1, -1;
     }
 
-    void constraint(const Vector& x, Vector& eq, Vector& ineq, Vector& lb, Vector& ub) {
-        // printf("constraint\n");
-        ineq.resize(2);
-        eq.resize(0);
-        lb.resize(2);
-        ub.resize(2);
-
-        ineq << 1 - x.squaredNorm(), x.squaredNorm() - 2;  // 1 <= x0^2 + x1^2 <= 2
-        lb << 0, 0;                                        // x0 > 0 and x1 > 0
-        ub << infinity, infinity;
+    void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) {
+        // 1 <= x0^2 + x1^2 <= 2
+        // 0 <= x0
+        // 0 <= x1
+        c << x.squaredNorm(), x;
+        l << 1, 0, 0;
+        u << 2, infinity, infinity;
     }
 
-    void constraint_linearized(const Vector& x, Matrix& A_eq, Vector& eq, Matrix& A_ineq,
-                               Vector& ineq, Vector& lb, Vector& ub) {
-        // printf("constraint_linearized\n");
-        A_ineq.resize(2, 2);
-        A_eq.resize(0, 2);
+    void constraint_linearized(const Vector& x, Matrix& Jc, Vector& c, Vector& l, Vector& u) {
+        Jc.resize(3, 2);
 
-        constraint(x, eq, ineq, lb, ub);
-        A_ineq << -2 * x.transpose(), 2 * x.transpose();
+        constraint(x, c, l, u);
+        Jc << 2 * x.transpose(), Matrix::Identity(2, 2);
     }
 };
 
@@ -62,13 +51,15 @@ TEST(SQPTestCase, TestSimpleNLP) {
 
     // feasible initial point
     Eigen::Vector2d x0 = {1.2, 0.1};
-    Eigen::Vector4d y0;
+    Eigen::Vector3d y0;
     y0.setZero();
 
     solver.settings().max_iter = 100;
+    solver.settings().line_search_max_iter = 10;  // TODO(mi): doesn't work for higher values
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
 
+    // std::cout << "iter " << solver.info().iter << std::endl;
     // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
     // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
@@ -83,7 +74,7 @@ TEST(SQPTestCase, InfeasibleStart) {
 
     // infeasible initial point
     Eigen::Vector2d x0 = {2, -1};
-    Eigen::Vector4d y0;
+    Eigen::Vector3d y0;
     y0.setOnes();
 
     solver.settings().max_iter = 100;
@@ -94,9 +85,9 @@ TEST(SQPTestCase, InfeasibleStart) {
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
-template <typename Scalar_, typename _Derived>
-struct NonLinearProblemAutoDiff : public NonLinearProblem<Scalar_> {
-    using Scalar = Scalar_;
+template <typename SCALAR, typename DERIVED>
+struct NonLinearProblemAutoDiff : public NonLinearProblem<SCALAR> {
+    using Scalar = SCALAR;
     using Vector = NonLinearProblem<double>::Vector;
     using Matrix = NonLinearProblem<double>::Matrix;
 
@@ -111,7 +102,7 @@ struct NonLinearProblemAutoDiff : public NonLinearProblem<Scalar_> {
     }
 
     void objective(const Vector& x, Scalar& obj) override {
-        static_cast<_Derived*>(this)->objective(x, obj);
+        static_cast<DERIVED*>(this)->objective(x, obj);
     }
 
     void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) override {
@@ -119,36 +110,28 @@ struct NonLinearProblemAutoDiff : public NonLinearProblem<Scalar_> {
         ADScalar ad_obj;
         ADVectorSeed(ad_x);
         /* Static polymorphism using CRTP */
-        static_cast<_Derived*>(this)->objective(ad_x, ad_obj);
+        static_cast<DERIVED*>(this)->objective(ad_x, ad_obj);
         obj = ad_obj.value();
         grad = ad_obj.derivatives();
     }
 
-    void constraint(const Vector& x, Vector& eq, Vector& ineq, Vector& lb, Vector& ub) override {
-        static_cast<_Derived*>(this)->constraint(x, eq, ineq, lb, ub);
+    void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) override {
+        static_cast<DERIVED*>(this)->constraint(x, c, l, u);
     }
 
-    void constraint_linearized(const Vector& x, Matrix& J_eq, Vector& eq, Matrix& J_ineq,
-                               Vector& ineq, Vector& lb, Vector& ub) override {
-        ADVector ad_eq(this->num_eq);
-        ADVector ad_ineq(this->num_ineq);
-
+    void constraint_linearized(const Vector& x, Matrix& Jc, Vector& c, Vector& l,
+                               Vector& u) override {
+        ADVector ad_c(this->num_constr);
         ADVector ad_x = x;
+
         ADVectorSeed(ad_x);
-        static_cast<_Derived*>(this)->constraint(ad_x, ad_eq, ad_ineq, lb, ub);
+        static_cast<DERIVED*>(this)->constraint(ad_x, ad_c, l, u);
 
-        // fill equality constraint Jacobian
-        for (int i = 0; i < ad_eq.rows(); i++) {
-            eq[i] = ad_eq[i].value();
-            Eigen::Ref<Vector> deriv = ad_eq[i].derivatives();
-            J_eq.row(i) = deriv.transpose();
-        }
-
-        // fill inequality constraint Jacobian
-        for (int i = 0; i < ad_ineq.rows(); i++) {
-            ineq[i] = ad_ineq[i].value();
-            Eigen::Ref<Vector> deriv = ad_ineq[i].derivatives();
-            J_ineq.row(i) = deriv.transpose();
+        // fill constraint Jacobian
+        for (int i = 0; i < ad_c.rows(); i++) {
+            c[i] = ad_c[i].value();
+            Eigen::Ref<Vector> deriv = ad_c[i].derivatives();
+            Jc.row(i) = deriv.transpose();
         }
     }
 };
@@ -156,48 +139,27 @@ struct NonLinearProblemAutoDiff : public NonLinearProblem<Scalar_> {
 struct ConstrainedRosenbrock : public NonLinearProblemAutoDiff<double, ConstrainedRosenbrock> {
     const Scalar a = 1;
     const Scalar b = 100;
-    Eigen::Matrix<Scalar, 2, 1> SOLUTION = {0.7071067812, 0.707106781};
+    Eigen::Matrix<Scalar, 2, 1> SOLUTION = {0.707106781, 0.707106781};
 
     ConstrainedRosenbrock() {
         num_var = 2;
-        num_ineq = 1;
-        num_eq = 1;
+        num_constr = 2;
     }
 
     template <typename DerivedA, typename DerivedB>
     void objective(const DerivedA& x, DerivedB& cst) {
-        // printf("objective\n");
-        // std::cout << "x " << x.transpose() << std::endl;
-
         // (a-x)^2 + b*(y-x^2)^2
         cst = pow(a - x(0), 2) + b * pow(x(1) - pow(x(0), 2), 2);
     }
 
-    template <typename A, typename B, typename C>
-    void constraint(const A& x, B& eq, C& ineq, Vector& lb, Vector& ub) {
-        // printf("constraint\n");
-        // std::cout << "x " << x.transpose() << std::endl;
-        // std::cout << "eq " << eq.transpose() << std::endl;
-        // std::cout << "ineq " << ineq.transpose() << std::endl;
-        // std::cout << "lb " << lb.transpose() << std::endl;
-        // std::cout << "ub " << ub.transpose() << std::endl;
-
-        ineq.resize(num_ineq);
-        eq.resize(num_eq);
-        lb.resize(num_var);
-        ub.resize(num_var);
-
-        // y >= x
-        ineq << x(0) - x(1);
-        // x^2 + y^2 == 1
-        eq << x.squaredNorm() - 1;
-
+    template <typename A, typename B>
+    void constraint(const A& x, B& c, Vector& l, Vector& u) {
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
-        lb << -infinity, -infinity;
-        ub << infinity, infinity;
-
-        // lb << 0, 0;
-        // ub << 0.5, 1;
+        // y >= x
+        // x^2 + y^2 == 1
+        c << x(0) - x(1), x.squaredNorm();
+        u << 0, 1;
+        l << -infinity, 1;
     }
 };
 
@@ -205,7 +167,7 @@ TEST(SQPTestCase, TestConstrainedRosenbrock) {
     ConstrainedRosenbrock problem;
     SQP<double> solver;
     Eigen::Vector2d x0, x;
-    Eigen::Vector4d y0;
+    Eigen::Vector2d y0;
     y0.setZero();
 
     x0 << 0, 0;

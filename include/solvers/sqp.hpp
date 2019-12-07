@@ -41,22 +41,17 @@ struct NonLinearProblem {
     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
 
     int num_var;
-    int num_ineq;
-    int num_eq;
+    int num_constr;
 
     virtual void objective(const Vector& x, Scalar& obj) = 0;
     virtual void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) = 0;
-    virtual void constraint(const Vector& x, Vector& b_eq, Vector& b_ineq, Vector& lb,
-                            Vector& ub) = 0;
-    virtual void constraint_linearized(const Vector& x, Matrix& A_eq, Vector& b_eq, Matrix& A_ineq,
-                                       Vector& b_ineq, Vector& lb, Vector& ub) = 0;
+    virtual void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) = 0;
+    virtual void constraint_linearized(const Vector&x, Matrix&Jc, Vector&c, Vector&l, Vector&u) = 0;
 };
 
 /*
  * minimize     f(x)
- * subject to   ce(x)  = 0
- *              ci(x) <= 0
- *              l <= x <= u
+ * subject to   l <= c(x) <= u
  */
 template <typename Scalar_>
 class SQP {
@@ -96,41 +91,38 @@ class SQP {
    private:
     void _solve(Problem& prob);
 
-    bool termination_criteria(const Vector& x, Problem& prob) const;
+    bool termination_criteria(const Vector& x, Problem& prob);
     void solve_qp(Problem& prob, Vector& p, Vector& lambda);
 
     /** Line search in direction p using l1 merit function. */
     Scalar line_search(Problem& prob, const Vector& p);
 
     /** L1 norm of constraint violation */
-    Scalar constraint_norm(const Vector& x, Problem& prob) const;
+    Scalar constraint_norm(const Vector& x, Problem& prob);
 
     /** L_inf norm of constraint violation */
-    Scalar max_constraint_violation(const Vector& x, Problem& prob) const;
+    Scalar max_constraint_violation(const Vector& x, Problem& prob);
 
     // Solver state variables
     Vector x_;
     Vector lambda_;
     Vector step_prev_;
     Vector grad_L_;
+    Vector delta_grad_L_;
 
-    Vector b_eq;
-    Matrix A_eq;
-    Vector b_ineq;
-    Matrix A_ineq;
-    Vector lb_, ub_;
-
-    Matrix P;
-    Matrix A;
-    Vector q;
-
-    settings_t settings_;
-    sqp_info_t info_;
+    Matrix Hess_;
+    Vector grad_obj_;
+    Scalar obj_;
+    Matrix Jac_constr_;
+    Vector constr_;
+    Vector l_, u_;
 
     // info
     Scalar dual_step_norm_;
     Scalar primal_step_norm_;
-    Scalar cost_;
+
+    settings_t settings_;
+    sqp_info_t info_;
 };
 
 extern template class SQP<double>;
