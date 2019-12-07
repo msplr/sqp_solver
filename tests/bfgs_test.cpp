@@ -39,7 +39,6 @@ TEST(BFGSTestCase, Test2D_posdef) {
         EXPECT_TRUE(is_posdef(B));
     }
 
-    std::cout << "B\n" << B << std::endl;
     EXPECT_TRUE(B.isApprox(H, 1e-3));
 }
 
@@ -63,7 +62,6 @@ TEST(BFGSTestCase, Test2D_indefinite) {
 
         EXPECT_TRUE(is_posdef(B));
     }
-    std::cout << "B\n" << B << std::endl;
 }
 
 #if 0 // suspended for now, see issue #13
@@ -81,8 +79,6 @@ TEST(BFGSTestCase, TestSmallStep) {
     y << -0.00963563, -0.00957048;
     BFGS_update(B, step, y);
     EXPECT_TRUE(is_posdef(B));
-
-    std::cout << "B\n" << B << std::endl;
 }
 #endif
 

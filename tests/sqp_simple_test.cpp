@@ -69,7 +69,8 @@ TEST(SQPTestCase, TestSimpleNLP) {
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
 
-    std::cout << problem.SOLUTION << std::endl;
+    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
@@ -215,8 +216,9 @@ TEST(SQPTestCase, TestConstrainedRosenbrock) {
 
     x = solver.primal_solution();
 
-    std::cout << "iter " << solver.info().iter << std::endl;
-    std::cout << "Solution " << x.transpose() << std::endl;
+    // std::cout << "iter " << solver.info().iter << std::endl;
+    // std::cout << "primal solution " << x.transpose() << std::endl;
+    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);

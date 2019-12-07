@@ -75,11 +75,23 @@ class SQP {
     // https://eigen.tuxfamily.org/dox/group__TopicStructHavingEigenMembers.html
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    SQP();
+    SQP() = default;
     ~SQP() = default;
 
     void solve(Problem& prob, const Vector& x0, const Vector& lambda0);
     void solve(Problem& prob);
+
+    inline const Vector& primal_solution() const { return x_; }
+    inline Vector& primal_solution() { return x_; }
+
+    inline const Vector& dual_solution() const { return lambda_; }
+    inline Vector& dual_solution() { return lambda_; }
+
+    inline const settings_t& settings() const { return settings_; }
+    inline settings_t& settings() { return settings_; }
+
+    inline const sqp_info_t& info() const { return info_; }
+    inline sqp_info_t& info() { return info_; }
 
    private:
     void _solve(Problem& prob);
@@ -96,12 +108,11 @@ class SQP {
     /** L_inf norm of constraint violation */
     Scalar max_constraint_violation(const Vector& x, Problem& prob) const;
 
-   private:
     // Solver state variables
-    Vector _x;
-    Vector _lambda;
-    Vector _step_prev;
-    Vector _grad_L;
+    Vector x_;
+    Vector lambda_;
+    Vector step_prev_;
+    Vector grad_L_;
 
     Vector b_eq;
     Matrix A_eq;
@@ -113,26 +124,13 @@ class SQP {
     Matrix A;
     Vector q;
 
-    settings_t _settings;
-    sqp_info_t _info;
+    settings_t settings_;
+    sqp_info_t info_;
 
     // info
-    Scalar _dual_step_norm;
-    Scalar _primal_step_norm;
-    Scalar _cost;
-
-   public:
-    inline const Vector& primal_solution() const { return _x; }
-    inline Vector& primal_solution() { return _x; }
-
-    inline const Vector& dual_solution() const { return _lambda; }
-    inline Vector& dual_solution() { return _lambda; }
-
-    inline const settings_t& settings() const { return _settings; }
-    inline settings_t& settings() { return _settings; }
-
-    inline const sqp_info_t& info() const { return _info; }
-    inline sqp_info_t& info() { return _info; }
+    Scalar dual_step_norm_;
+    Scalar primal_step_norm_;
+    Scalar cost_;
 };
 
 extern template class SQP<double>;
