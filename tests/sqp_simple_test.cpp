@@ -192,11 +192,11 @@ struct ConstrainedRosenbrock : public NonLinearProblemAutoDiff<double, Constrain
         eq << x.squaredNorm() - 1;
 
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
-        // lb << -infinity, -infinity;
-        // ub << infinity, infinity;
+        lb << -infinity, -infinity;
+        ub << infinity, infinity;
 
-        lb << 0, 0;
-        ub << 0.5, 1;
+        // lb << 0, 0;
+        // ub << 0.5, 1;
     }
 };
 
@@ -208,8 +208,9 @@ TEST(SQPTestCase, TestConstrainedRosenbrock) {
     y0.setZero();
 
     x0 << 0, 0;
-    solver.settings().max_iter = 100;
-    // solver.settings().line_search_max_iter = 10;
+    solver.settings().max_iter = 1000;
+    solver.settings().line_search_max_iter = 10;
+    // solver.settings().eta = 0.5;
     solver.solve(problem, x0, y0);
 
     x = solver.primal_solution();

@@ -12,7 +12,8 @@ option(SQP_SOLVER_INSTALL "Enable generation of install target" ON)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 add_library(${PROJECT_NAME} STATIC
-	src/SQP.cpp
+	src/qp.cpp
+    src/sqp.cpp
 )
 target_link_libraries(${PROJECT_NAME}
 	Eigen3::Eigen

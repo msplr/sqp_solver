@@ -36,7 +36,6 @@ struct sqp_info_t {
 
 template <typename Scalar_ = double>
 struct NonLinearProblem {
-   public:
     using Scalar = Scalar_;
     using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;

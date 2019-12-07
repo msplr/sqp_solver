@@ -1,9 +1,9 @@
 #include <Eigen/Eigenvalues>
 #include <cmath>
 #include <iostream>
-#include <solvers/sqp.hpp>
 #include <solvers/bfgs.hpp>
-#include <solvers/qp_solver.hpp>
+#include <solvers/qp.hpp>
+#include <solvers/sqp.hpp>
 
 #ifndef SOLVER_ASSERT
 #define SOLVER_ASSERT(x)  // NOP
@@ -11,12 +11,12 @@
 
 namespace sqp {
 
+template <typename Scalar>
 class QPSolver {
    public:
-    qp_solver::QP<2, 4, double> qp_;
-    qp_solver::QPSolver<qp_solver::QP<2, 4, double>> qp_solver_;
+    qp_solver::QuadraticProblem<Scalar> qp_;
+    qp_solver::QPSolver<Scalar> qp_solver_;
 
-    using Scalar = double;
     using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
 
@@ -33,16 +33,16 @@ class QPSolver {
         qp_solver_.settings().adaptive_rho_interval = 50;
         qp_solver_.settings().alpha = 1.6;
 
-        std::cout << P << std::endl;
-        qp_.P = P;
-        std::cout << q.transpose() << std::endl;
-        qp_.q = q;
-        std::cout << A << std::endl;
-        qp_.A = A;
-        std::cout << l.transpose() << std::endl;
-        qp_.l = l;
-        std::cout << u.transpose() << std::endl;
-        qp_.u = u;
+        // std::cout << P << std::endl;
+        qp_.P = &P;
+        // std::cout << q.transpose() << std::endl;
+        qp_.q = &q;
+        // std::cout << A << std::endl;
+        qp_.A = &A;
+        // std::cout << l.transpose() << std::endl;
+        qp_.l = &l;
+        // std::cout << u.transpose() << std::endl;
+        qp_.u = &u;
 
         qp_solver_.setup(qp_);
         // qp_solver_.update_qp(qp_);
@@ -146,13 +146,22 @@ void SQP<T>::_solve(Problem& prob) {
 }
 
 template <typename Matrix>
-bool _is_posdef(Matrix H) {
+bool _is_posdef_eigen(Matrix H) {
     Eigen::EigenSolver<Matrix> eigensolver(H);
     for (int i = 0; i < eigensolver.eigenvalues().rows(); i++) {
         double v = eigensolver.eigenvalues()(i).real();
         if (v <= 0) {
             return false;
         }
+    }
+    return true;
+}
+
+template <typename Matrix>
+bool _is_posdef(Matrix H) {
+    Eigen::LLT<Matrix> llt(H);
+    if (llt.info() == Eigen::NumericalIssue) {
+        return false;
     }
     return true;
 }
@@ -251,7 +260,7 @@ void SQP<T>::solve_qp(Problem& prob, Vector& p, Vector& lambda) {
 
     // solve the QP
     int iter;
-    QPSolver qp_solver;
+    QPSolver<Scalar> qp_solver;
     qp_solver.solve(P, q, A, l, u, p, lambda);
 }
 
@@ -269,7 +278,8 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
     // TODO: get mu from merit function model using hessian of Lagrangian
     mu = cost_gradient.dot(p) / ((1 - _settings.rho) * constr_l1);
 
-    mu = fmax(0, mu);
+    printf("mu %f\n", mu);
+    // mu = fmax(0, mu);
     // mu *= 1e+2;
 
     phi_l1 = _cost + mu * constr_l1;
@@ -299,9 +309,9 @@ typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) 
     Scalar cl1 = DIV_BY_ZERO_REGUL;
     Vector c_eq;
     Vector c_ineq;
-    Vector lb_, ub_;
+    Vector lb, ub;
 
-    prob.constraint(x, c_eq, c_ineq, lb_, ub_);
+    prob.constraint(x, c_eq, c_ineq, lb, ub);
 
     // c_eq = 0
     cl1 += c_eq.template lpNorm<1>();
@@ -310,8 +320,8 @@ typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) 
     cl1 += c_ineq.cwiseMax(0.0).sum();
 
     // l <= x <= u
-    cl1 += (lb_ - x).cwiseMax(0.0).sum();
-    cl1 += (x - ub_).cwiseMax(0.0).sum();
+    cl1 += (lb - x).cwiseMax(0.0).sum();
+    cl1 += (x - ub).cwiseMax(0.0).sum();
 
     return cl1;
 }
@@ -344,5 +354,6 @@ typename SQP<T>::Scalar SQP<T>::max_constraint_violation(const Vector& x, Proble
 }
 
 template class SQP<double>;
+template class SQP<float>;
 
 }  // namespace sqp
