@@ -1,106 +1,80 @@
-#include "gtest/gtest.h"
-#define SOLVER_DEBUG
-#include "solvers/sqp.hpp"
+#include <gtest/gtest.h>
+#include <solvers/sqp.hpp>
 
 using namespace sqp;
 
 namespace sqp_test {
 
-template <typename _Scalar, int _VAR_SIZE, int _NUM_EQ=0, int _NUM_INEQ=0>
-struct ProblemBase {
-    enum {
-        VAR_SIZE = _VAR_SIZE,
-        NUM_EQ = _NUM_EQ,
-        NUM_INEQ = _NUM_INEQ,
-    };
+struct SimpleNLP : public NonLinearProblem<double> {
+    using Vector = NonLinearProblem<double>::Vector;
+    using Matrix = NonLinearProblem<double>::Matrix;
 
-    using Scalar = double;
-    using var_t = Eigen::Matrix<Scalar, VAR_SIZE, 1>;
-    using grad_t = Eigen::Matrix<Scalar, VAR_SIZE, 1>;
-    using hessian_t = Eigen::Matrix<Scalar, VAR_SIZE, VAR_SIZE>;
+    const Scalar infinity = std::numeric_limits<Scalar>::infinity();
+    Eigen::Vector2d SOLUTION = {1, 1};
 
-    using b_eq_t = Eigen::Matrix<Scalar, NUM_EQ, 1>;
-    using A_eq_t = Eigen::Matrix<Scalar, NUM_EQ, VAR_SIZE>;
-    using b_ineq_t = Eigen::Matrix<Scalar, NUM_INEQ, 1>;
-    using A_ineq_t = Eigen::Matrix<Scalar, NUM_INEQ, VAR_SIZE>;
-};
-
-struct SimpleNLP_2D {
-    enum {
-        VAR_SIZE = 2,
-        NUM_EQ = 0,
-        NUM_INEQ = 2,
-    };
-    using Scalar = double;
-    using var_t = Eigen::Vector2d;
-    using grad_t = Eigen::Vector2d;
-
-    using b_eq_t = Eigen::Matrix<Scalar, NUM_EQ, 1>;
-    using A_eq_t = Eigen::Matrix<Scalar, NUM_EQ, VAR_SIZE>;
-    using b_ineq_t = Eigen::Matrix<Scalar, NUM_INEQ, 1>;
-    using A_ineq_t = Eigen::Matrix<Scalar, NUM_INEQ, VAR_SIZE>;
-
-    var_t SOLUTION = {1, 1};
-
-    void cost(const var_t& x, Scalar &cst)
-    {
-        cst = -x(0) -x(1);
+    SimpleNLP() {
+        num_var = 2;
+        num_constr = 3;
     }
 
-    void cost_linearized(const var_t& x, grad_t &grad, Scalar &cst)
-    {
-        cost(x, cst);
+    void objective(const Vector& x, Scalar& obj) { obj = -x.sum(); }
+
+    void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) {
+        grad.resize(num_var);
+
+        objective(x, obj);
         grad << -1, -1;
     }
 
-    void constraint(const var_t& x, b_eq_t& b_eq, b_ineq_t& b_ineq, var_t& lbx, var_t& ubx)
-    {
-        const Scalar infinity = std::numeric_limits<Scalar>::infinity();
-        b_ineq << 1 - x.squaredNorm(), x.squaredNorm() - 2; // 1 <= x0^2 + x1^2 <= 2
-        lbx << 0, 0; // x0 > 0 and x1 > 0
-        ubx << infinity, infinity;
+    void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) {
+        // 1 <= x0^2 + x1^2 <= 2
+        // 0 <= x0
+        // 0 <= x1
+        c << x.squaredNorm(), x;
+        l << 1, 0, 0;
+        u << 2, infinity, infinity;
     }
 
-    void constraint_linearized(const var_t& x,
-                               A_eq_t& A_eq,
-                               b_eq_t& b_eq,
-                               A_ineq_t& A_ineq,
-                               b_ineq_t& b_ineq,
-                               var_t& lbx,
-                               var_t& ubx)
-    {
-        constraint(x, b_eq, b_ineq, lbx, ubx);
-        A_ineq << -2*x.transpose(),
-                   2*x.transpose();
+    void constraint_linearized(const Vector& x, Matrix& Jc, Vector& c, Vector& l, Vector& u) {
+        Jc.resize(3, 2);
+
+        constraint(x, c, l, u);
+        Jc << 2 * x.transpose(), Matrix::Identity(2, 2);
     }
 };
 
 TEST(SQPTestCase, TestSimpleNLP) {
-    SimpleNLP_2D problem;
-    SQP<SimpleNLP_2D> solver;
+    SimpleNLP problem;
+    SQP<double> solver;
     Eigen::Vector2d x;
 
     // feasible initial point
     Eigen::Vector2d x0 = {1.2, 0.1};
-    Eigen::Vector4d y0;
-    y0.setZero();
+    Eigen::Vector3d y0 = Eigen::VectorXd::Zero(3);
 
+    // TODO(mi): doesn't work for higher values
+    solver.settings().line_search_max_iter = 10;
     solver.settings().max_iter = 100;
+
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
+
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
 TEST(SQPTestCase, InfeasibleStart) {
-    SimpleNLP_2D problem;
-    SQP<SimpleNLP_2D> solver;
+    SimpleNLP problem;
+    SQP<double> solver;
     Eigen::Vector2d x;
 
     // infeasible initial point
     Eigen::Vector2d x0 = {2, -1};
-    Eigen::Vector4d y0;
+    Eigen::Vector3d y0;
     y0.setOnes();
 
     solver.settings().max_iter = 100;
@@ -111,55 +85,54 @@ TEST(SQPTestCase, InfeasibleStart) {
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
+struct SimpleQP : public NonLinearProblem<double> {
+    using Vector = NonLinearProblem<double>::Vector;
+    using Matrix = NonLinearProblem<double>::Matrix;
 
-struct SimpleQP : public ProblemBase<double, 2, 1, 0> {
     Eigen::Matrix2d P;
-    Eigen::Vector2d q;
-    Eigen::Vector2d SOLUTION;
+    Eigen::Vector2d q = {1, 1};
+    Eigen::Vector2d SOLUTION = {0.3, 0.7};
 
-    SimpleQP()
-    {
-        P << 4, 1,
-             1, 2;
-        q << 1, 1;
-        SOLUTION << 0.3, 0.7;
+    SimpleQP() {
+        P << 4, 1, 1, 2;
+        num_var = 2;
+        num_constr = 3;
     }
 
-    void cost(const var_t& x, Scalar &cst)
-    {
-        cst = 0.5 * x.dot(P*x) + q.dot(x);
+    void objective(const Vector& x, Scalar& obj) final { obj = 0.5 * x.dot(P * x) + q.dot(x); }
+
+    void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) final {
+        objective(x, obj);
+        grad = P * x + q;
     }
 
-    void cost_linearized(const var_t& x, grad_t &grad, Scalar &cst)
-    {
-        cost(x, cst);
-        grad << P*x + q;
+    void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) final {
+        // x1 + x2 = 1
+        c << x.sum(), x;
+        l << 1, 0, 0;
+        u << 1, 0.7, 0.7;
     }
 
-    void constraint(const var_t& x, b_eq_t& b_eq, b_ineq_t& b_ineq, var_t& lbx, var_t& ubx)
-    {
-        b_eq << x.sum() - 1; // x1 + x2 = 1
-        lbx << 0, 0;
-        ubx << 0.7, 0.7;
-    }
-
-    void constraint_linearized(const var_t& x, A_eq_t& A_eq, b_eq_t& b_eq, A_ineq_t& A_ineq, b_ineq_t& b_ineq, var_t& lbx, var_t& ubx)
-    {
-        constraint(x, b_eq, b_ineq, lbx, ubx);
-        A_eq << 1, 1;
+    void constraint_linearized(const Vector& x, Matrix& Jc, Vector& c, Vector& l, Vector& u) final {
+        constraint(x, c, l, u);
+        Jc << 1, 1, Matrix::Identity(2, 2);
     }
 };
 
 TEST(SQPTestCase, TestSimpleQP) {
     SimpleQP problem;
-    SQP<SimpleQP> solver;
-    Eigen::Vector2d x;
+    SQP<double> solver;
+    Eigen::VectorXd x0 = Eigen::Vector2d(0,0);
+    Eigen::VectorXd y0 = Eigen::Vector3d(0,0,0);
 
-    solver.solve(problem);
-    x = solver.primal_solution();
+    solver.solve(problem, x0, y0);
 
-    EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+
+    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
-} // sqp_test
+}  // namespace sqp_test

@@ -8,6 +8,8 @@
 #include <limits>
 #include <vector>
 
+#define QP_SOLVER_PRINTING
+
 namespace qp_solver {
 
 /** Quadratic Problem
@@ -65,7 +67,7 @@ struct QPSolverSettings {
 #endif
 };
 
-typedef enum { SOLVED, MAX_ITER_EXCEEDED, UNSOLVED, UNINITIALIZED } QPSolverStatus;
+typedef enum { SOLVED, MAX_ITER_EXCEEDED, UNSOLVED, NUMERICAL_ISSUES, UNINITIALIZED } QPSolverStatus;
 
 template <typename Scalar>
 struct QPSolverInfo {
@@ -89,6 +91,9 @@ struct QPSolverInfo {
                 break;
             case UNSOLVED:
                 printf("UNSOLVED\n");
+                break;
+            case NUMERICAL_ISSUES:
+                printf("NUMERICAL_ISSUES\n");
                 break;
             default:
                 printf("UNINITIALIZED\n");
@@ -185,8 +190,8 @@ class QPSolver {
     void update_KKT_mat(const QP &qp);
 
     void update_KKT_rho();
-    void factorize_KKT();
-    void compute_KKT();
+    bool factorize_KKT();
+    bool compute_KKT();
 #ifdef QP_SOLVER_SPARSE
     void sparse_insert_at(Matrix &dst, int row, int col, const Matrix &src) const
 #endif

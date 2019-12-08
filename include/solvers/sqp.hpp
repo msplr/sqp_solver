@@ -3,7 +3,12 @@
 #include <Eigen/Dense>
 #include <limits>
 
+#include <solvers/qp.hpp>
+
 namespace sqp {
+
+template <typename T>
+class SQP;
 
 template <typename Scalar>
 struct sqp_settings_t {
@@ -14,7 +19,7 @@ struct sqp_settings_t {
     Scalar eps_dual = 1e-3; /**< dual step termination threshold, eps_dual > 0 */
     int max_iter = 100;
     int line_search_max_iter = 100;
-    void (*iteration_callback)(void* solver) = nullptr;
+    std::function<void(SQP<Scalar>&)> iteration_callback;
 
     bool validate() {
         bool valid;
@@ -24,14 +29,33 @@ struct sqp_settings_t {
     }
 };
 
-struct sqp_status_t {
-    enum { SOLVED, MAX_ITER_EXCEEDED, INVALID_SETTINGS } value;
-};
+typedef enum { SOLVED, MAX_ITER_EXCEEDED, INVALID_SETTINGS } Status;
 
-struct sqp_info_t {
+struct Info {
     int iter;
     int qp_solver_iter;
-    sqp_status_t status;
+    Status status;
+
+    void print() {
+        printf("SQP info:\n");
+        printf("  iter: %d\n", iter);
+        printf("  qp_solver_iter: %d\n", qp_solver_iter);
+        printf("  status: ");
+        switch (status) {
+            case SOLVED:
+                printf("SOLVED\n");
+                break;
+            case MAX_ITER_EXCEEDED:
+                printf("MAX_ITER_EXCEEDED\n");
+                break;
+            case INVALID_SETTINGS:
+                printf("INVALID_SETTINGS\n");
+                break;
+            default:
+                printf("UNKNOWN\n");
+                break;
+        }
+    }
 };
 
 template <typename Scalar_ = double>
@@ -46,7 +70,8 @@ struct NonLinearProblem {
     virtual void objective(const Vector& x, Scalar& obj) = 0;
     virtual void objective_linearized(const Vector& x, Vector& grad, Scalar& obj) = 0;
     virtual void constraint(const Vector& x, Vector& c, Vector& l, Vector& u) = 0;
-    virtual void constraint_linearized(const Vector&x, Matrix&Jc, Vector&c, Vector&l, Vector&u) = 0;
+    virtual void constraint_linearized(const Vector& x, Matrix& Jc, Vector& c, Vector& l,
+                                       Vector& u) = 0;
 };
 
 /*
@@ -60,8 +85,7 @@ class SQP {
     using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
     using Problem = NonLinearProblem<Scalar>;
-
-    using settings_t = sqp_settings_t<Scalar>;
+    using Settings = sqp_settings_t<Scalar>;
 
     // Constants
     static constexpr Scalar DIV_BY_ZERO_REGUL = std::numeric_limits<Scalar>::epsilon();
@@ -70,7 +94,7 @@ class SQP {
     // https://eigen.tuxfamily.org/dox/group__TopicStructHavingEigenMembers.html
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    SQP() = default;
+    SQP();
     ~SQP() = default;
 
     void solve(Problem& prob, const Vector& x0, const Vector& lambda0);
@@ -82,17 +106,19 @@ class SQP {
     inline const Vector& dual_solution() const { return lambda_; }
     inline Vector& dual_solution() { return lambda_; }
 
-    inline const settings_t& settings() const { return settings_; }
-    inline settings_t& settings() { return settings_; }
+    inline const Settings& settings() const { return settings_; }
+    inline Settings& settings() { return settings_; }
 
-    inline const sqp_info_t& info() const { return info_; }
-    inline sqp_info_t& info() { return info_; }
+    inline const Info& info() const { return info_; }
+    inline Info& info() { return info_; }
 
-   private:
-    void _solve(Problem& prob);
+    // private:
+    void run_solve(Problem& prob);
 
     bool termination_criteria(const Vector& x, Problem& prob);
     void solve_qp(Problem& prob, Vector& p, Vector& lambda);
+    bool run_solve_qp(const Matrix& P, const Vector& q, const Matrix& A, const Vector& l,
+                      const Vector& u, Vector& prim, Vector& dual);
 
     /** Line search in direction p using l1 merit function. */
     Scalar line_search(Problem& prob, const Vector& p);
@@ -121,8 +147,10 @@ class SQP {
     Scalar dual_step_norm_;
     Scalar primal_step_norm_;
 
-    settings_t settings_;
-    sqp_info_t info_;
+    Settings settings_;
+    Info info_;
+
+    qp_solver::QPSolver<Scalar> qp_solver_;
 };
 
 extern template class SQP<double>;

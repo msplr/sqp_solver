@@ -35,9 +35,12 @@ void QPSolver<T>::setup(const QP &qp) {
 
     // construct KKT system and compute decomposition
     construct_KKT_mat(qp);
-    compute_KKT();
 
-    info_.status = UNSOLVED;
+    if (compute_KKT()) {
+        info_.status = UNSOLVED;
+    } else {
+        info_.status = NUMERICAL_ISSUES;
+    }
 }
 
 template <typename T>
@@ -50,17 +53,20 @@ void QPSolver<T>::update_qp(const QP &qp) {
 
     // update KKT system and do factorization
     update_KKT_mat(qp);
-    factorize_KKT();
 
-    info_.status = UNSOLVED;
+    if (factorize_KKT()) {
+        info_.status = UNSOLVED;
+    } else {
+        info_.status = NUMERICAL_ISSUES;
+    }
 }
 
 template <typename T>
 void QPSolver<T>::solve(const QP &qp) {
     bool check_termination = false;
 
-    if (info_.status == UNINITIALIZED) {
-        SOLVER_ASSERT(info_.status == UNINITIALIZED);
+    if (info_.status == UNINITIALIZED || info_.status == NUMERICAL_ISSUES) {
+        // SOLVER_ASSERT(info_.status == UNINITIALIZED);
         return;
     }
 
@@ -130,7 +136,10 @@ void QPSolver<T>::solve(const QP &qp) {
                 rho_vec_update(new_rho);
                 update_KKT_rho();
                 /* Note: KKT Sparsity pattern unchanged by rho update. Only factorize. */
-                factorize_KKT();
+                if (!factorize_KKT()) {
+                    info_.status = NUMERICAL_ISSUES;
+                    break;
+                }
             }
         }
     }
@@ -226,19 +235,27 @@ void QPSolver<T>::update_KKT_rho() {
 }
 
 template <typename T>
-void QPSolver<T>::factorize_KKT() {
+bool QPSolver<T>::factorize_KKT() {
 #ifdef QP_SOLVER_USE_SPARSE
     linear_solver.factorize(kkt_mat);
 #else
     linear_solver.compute(kkt_mat);
 #endif
-    SOLVER_ASSERT(linear_solver.info() == Eigen::Success);
+    if (linear_solver.info() != Eigen::Success) {
+        return false;
+    }
+    return true;
+    // SOLVER_ASSERT(linear_solver.info() == Eigen::Success);
 }
 
 template <typename T>
-void QPSolver<T>::compute_KKT() {
+bool QPSolver<T>::compute_KKT() {
     linear_solver.compute(kkt_mat);
-    SOLVER_ASSERT(linear_solver.info() == Eigen::Success);
+    if (linear_solver.info() != Eigen::Success) {
+        return false;
+    }
+    return true;
+    // SOLVER_ASSERT(linear_solver.info() == Eigen::Success);
 }
 
 #ifdef QP_SOLVER_USE_SPARSE
@@ -264,7 +281,7 @@ void QPSolver<T>::box_projection(Vector &z, const Vector &l, const Vector &u) {
 }
 
 template <typename T>
-void QPSolver<T>::constr_type_init(const Vector& l, const Vector& u, Eigen::VectorXi &constr_type) {
+void QPSolver<T>::constr_type_init(const Vector &l, const Vector &u, Eigen::VectorXi &constr_type) {
     for (int i = 0; i < l.rows(); i++) {
         if (l[i] < -LOOSE_BOUNDS_THRESH && u[i] > LOOSE_BOUNDS_THRESH) {
             constr_type[i] = LOOSE_BOUNDS;
@@ -356,7 +373,7 @@ bool QPSolver<T>::termination_criteria(const QP &qp) {
 #ifdef QP_SOLVER_PRINTING
 template <typename T>
 void QPSolver<T>::print_status(const QP &qp) const {
-    Scalar obj = 0.5 * x.dot(*qp.P * x) + *qp.q.dot(x);
+    Scalar obj = 0.5 * x.dot((*qp.P) * x) + (*qp.q).dot(x);
 
     if (iter == settings_.check_termination) {
         printf("iter   obj       rp        rd\n");

@@ -3,13 +3,14 @@ project(solver_test VERSION 0.1.0 LANGUAGES CXX)
 
 find_package(GTest REQUIRED)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 add_executable(
     tests
-    sqp_simple_test.cpp
     qp_solver_test.cpp
-    # # qp_solver_sparse_test.cpp
-    # sqp_test.cpp
-    # sqp_test_autodiff.cpp
+    # qp_solver_sparse_test.cpp
+    sqp_test.cpp
+    sqp_test_autodiff.cpp
     bfgs_test.cpp
     test_main.cpp
     )

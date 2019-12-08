@@ -2,57 +2,32 @@
 #include <cmath>
 #include <iostream>
 #include <solvers/bfgs.hpp>
-#include <solvers/qp.hpp>
 #include <solvers/sqp.hpp>
 
 #ifndef SOLVER_ASSERT
-#define SOLVER_ASSERT(x)  // NOP
+#define SOLVER_ASSERT(x) eigen_assert(x)
 #endif
 
 namespace sqp {
 
-template <typename Scalar>
-class QPSolver {
-   public:
-    qp_solver::QuadraticProblem<Scalar> qp_;
-    qp_solver::QPSolver<Scalar> qp_solver_;
-
-    using Matrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
-    using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
-    void solve(const Matrix& P, const Vector& q, const Matrix& A, const Vector& l, const Vector& u,
-               Vector& prim, Vector& dual) {
-        qp_solver_.settings().warm_start = true;
-        qp_solver_.settings().check_termination = 10;
-        qp_solver_.settings().eps_abs = 1e-4;
-        qp_solver_.settings().eps_rel = 1e-4;
-        qp_solver_.settings().max_iter = 100;
-        qp_solver_.settings().adaptive_rho = true;
-        qp_solver_.settings().adaptive_rho_interval = 50;
-        qp_solver_.settings().alpha = 1.6;
-
-        qp_.P = &P;
-        qp_.q = &q;
-        qp_.A = &A;
-        qp_.l = &l;
-        qp_.u = &u;
-
-        qp_solver_.setup(qp_);
-        // qp_solver_.update_qp(qp_);
-        qp_solver_.solve(qp_);
-
-        prim = qp_solver_.primal_solution();
-        dual = qp_solver_.dual_solution();
-    }
-};
+template <typename T>
+SQP<T>::SQP() {
+    // TODO(mi): Success is depends on QP solver settings, which is bad.
+    qp_solver_.settings().warm_start = true;
+    qp_solver_.settings().check_termination = 10;
+    qp_solver_.settings().eps_abs = 1e-4;
+    qp_solver_.settings().eps_rel = 1e-4;
+    qp_solver_.settings().max_iter = 100;
+    qp_solver_.settings().adaptive_rho = true;
+    qp_solver_.settings().adaptive_rho_interval = 50;
+    qp_solver_.settings().alpha = 1.6;
+}
 
 template <typename T>
 void SQP<T>::solve(Problem& prob, const Vector& x0, const Vector& lambda0) {
     x_ = x0;
     lambda_ = lambda0;
-    _solve(prob);
+    run_solve(prob);
 }
 
 template <typename T>
@@ -62,11 +37,11 @@ void SQP<T>::solve(Problem& prob) {
 
     x_.setZero(nx);
     lambda_.setZero(nc);
-    _solve(prob);
+    run_solve(prob);
 }
 
 template <typename T>
-void SQP<T>::_solve(Problem& prob) {
+void SQP<T>::run_solve(Problem& prob) {
     Vector p;         // search direction
     Vector p_lambda;  // dual search direction
     Scalar alpha;     // step size
@@ -88,8 +63,11 @@ void SQP<T>::_solve(Problem& prob) {
     l_.resize(nc);
     u_.resize(nc);
 
-    // initialize
     info_.qp_solver_iter = 0;
+
+    if (settings_.iteration_callback) {
+        settings_.iteration_callback(*this);
+    }
 
     int& iter = info_.iter;
     for (iter = 1; iter <= settings_.max_iter; iter++) {
@@ -108,22 +86,22 @@ void SQP<T>::_solve(Problem& prob) {
         primal_step_norm_ = alpha * p.template lpNorm<Eigen::Infinity>();
         dual_step_norm_ = alpha * p_lambda.template lpNorm<Eigen::Infinity>();
 
-        if (settings_.iteration_callback != nullptr) {
-            settings_.iteration_callback(this);
+        if (settings_.iteration_callback) {
+            settings_.iteration_callback(*this);
         }
 
         if (termination_criteria(x_, prob)) {
-            info_.status.value = sqp_status_t::SOLVED;
+            info_.status = SOLVED;
             break;
         }
     }
     if (iter > settings_.max_iter) {
-        info_.status.value = sqp_status_t::MAX_ITER_EXCEEDED;
+        info_.status = MAX_ITER_EXCEEDED;
     }
 }
 
 template <typename Matrix>
-bool _is_posdef_eigen(Matrix H) {
+bool is_posdef_eigen(Matrix H) {
     Eigen::EigenSolver<Matrix> eigensolver(H);
     for (int i = 0; i < eigensolver.eigenvalues().rows(); i++) {
         double v = eigensolver.eigenvalues()(i).real();
@@ -135,7 +113,7 @@ bool _is_posdef_eigen(Matrix H) {
 }
 
 template <typename Matrix>
-bool _is_posdef(Matrix H) {
+bool is_posdef(Matrix H) {
     Eigen::LLT<Matrix> llt(H);
     if (llt.info() == Eigen::NumericalIssue) {
         return false;
@@ -150,6 +128,12 @@ bool SQP<T>::termination_criteria(const Vector& x, Problem& prob) {
         return true;
     }
     return false;
+}
+
+template <typename Derived>
+inline bool is_nan(const Eigen::MatrixBase<Derived>& x) {
+    // return ((x.array() == x.array())).all();
+    return x.array().isNaN().any();
 }
 
 template <typename T>
@@ -183,8 +167,24 @@ void SQP<T>::solve_qp(Problem& prob, Vector& step, Vector& lambda) {
     } else {
         delta_grad_L_ += grad_L_;  // delta_grad_L_ = grad_L_prev - grad_L
         BFGS_update(Hess_, step_prev_, delta_grad_L_);
-        SOLVER_ASSERT(_is_posdef(Hess_));
     }
+
+    if (!is_posdef(Hess_)) {
+        std::cout << "Hessian not positive definite" << std::endl;
+        Scalar tau = 1e-3;
+        Vector v = Vector(prob.num_var);
+        while (!is_posdef(Hess_)) {
+            v.setConstant(tau);
+            Hess_ += v.asDiagonal();
+            tau *= 10;
+        }
+    }
+    if (is_nan(Hess_)) {
+        std::cout << "Hessian is NaN" << std::endl;
+    }
+
+    SOLVER_ASSERT(is_posdef(Hess_));
+    SOLVER_ASSERT(!is_nan(Hess_));
 
     // Constraints
     // from   l <= A.x + b <= u
@@ -196,13 +196,53 @@ void SQP<T>::solve_qp(Problem& prob, Vector& step, Vector& lambda) {
     Vector& q = grad_obj_;
 
     // solve the QP
-    int iter;
-    QPSolver<Scalar> qp_solver;
-    qp_solver.solve(P, q, A, l, u, step, lambda);
+    bool ok;
+    ok = run_solve_qp(P, q, A, l, u, step, lambda);
+
+    // if (!ok) {
+    //     Hess_.setIdentity();
+    //     step.setConstant(0.0);
+    //     lambda.setConstant(0.0);
+    // }
 
     // TODO:
     // B is not convex then use grad_L as step direction
     // i.e. fallback to steepest descent of Lagrangian
+}
+
+template <typename T>
+bool SQP<T>::run_solve_qp(const Matrix& P, const Vector& q, const Matrix& A, const Vector& l,
+                          const Vector& u, Vector& prim, Vector& dual) {
+    qp_solver::QuadraticProblem<Scalar> qp_;
+
+    qp_.P = &P;
+    qp_.q = &q;
+    qp_.A = &A;
+    qp_.l = &l;
+    qp_.u = &u;
+
+    qp_solver_.setup(qp_);
+    // qp_solver_.update_qp(qp_);
+    qp_solver_.solve(qp_);
+
+    info_.qp_solver_iter += qp_solver_.info().iter;
+
+    if (qp_solver_.info().status == qp_solver::NUMERICAL_ISSUES) {
+        printf("QPSolver NUMERICAL_ISSUES\n");
+        return false;
+    }
+    // if (qp_solver_.info().status == qp_solver::MAX_ITER_EXCEEDED) {
+    //     printf("QPSolver MAX_ITER_EXCEEDED\n");
+    //     return false;
+    // }
+
+    prim = qp_solver_.primal_solution();
+    dual = qp_solver_.dual_solution();
+
+    SOLVER_ASSERT(!is_nan(prim));
+    SOLVER_ASSERT(!is_nan(dual));
+
+    return true;
 }
 
 /** Line search in direction p using l1 merit function. */
