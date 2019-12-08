@@ -59,9 +59,9 @@ TEST(SQPTestCase, TestSimpleNLP) {
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
 
-    solver.info().print();
-    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    // solver.info().print();
+    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
@@ -127,9 +127,9 @@ TEST(SQPTestCase, TestSimpleQP) {
 
     solver.solve(problem, x0, y0);
 
-    solver.info().print();
-    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    // solver.info().print();
+    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);

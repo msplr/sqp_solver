@@ -105,14 +105,17 @@ TEST(SQPAutoDiff, TestConstrainedRosenbrock2D) {
     Eigen::VectorXd y0 = Eigen::VectorXd::Zero(2);
 
     solver.settings().max_iter = 100;
-    solver.settings().line_search_max_iter = 10;
+    // solver.settings().line_search_max_iter = 10;
+    solver.settings().line_search_max_iter = 100;
 
     // solver.settings().eta = 0.5;
     solver.solve(problem, x0, y0);
 
-    solver.info().print();
-    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    if (!solver.primal_solution().isApprox(problem.SOLUTION, 1e-2)) {
+        solver.info().print();
+        std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+        std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    }
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
@@ -142,24 +145,26 @@ struct Rosenbrock : public NonLinearProblemAutoDiff<double, Rosenbrock> {
         // const Scalar infinity = std::numeric_limits<Scalar>::infinity();
         // u.setConstant(infinity);
         u.setConstant(1e+17);
-        l.setConstant(-1);
+        l.setConstant(0.5);
     }
 };
 
 TEST(SQPAutoDiff, TestRosenbrock) {
-    Rosenbrock problem(10);
+    Rosenbrock problem(2);
     SQP<double> solver;
 
     solver.settings().max_iter = 100;
-    // solver.settings().line_search_max_iter = 10; // causes numerical issues
-    solver.settings().line_search_max_iter = 100;
+    solver.settings().line_search_max_iter = 10; // causes numerical issues
+    // solver.settings().line_search_max_iter = 100;
     solver.solve(problem);
 
-    solver.info().print();
-    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    if (!solver.primal_solution().isApprox(problem.SOLUTION, 1e-2)) {
+        solver.info().print();
+        std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+        std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    }
 
-    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-3));
+    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
@@ -209,9 +214,9 @@ TEST(SQPAutoDiff, TestSimpleNLP) {
 
     solver.solve(problem, x0, y0);
 
-    solver.info().print();
-    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    // solver.info().print();
+    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
