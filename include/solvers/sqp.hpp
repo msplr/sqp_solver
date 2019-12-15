@@ -15,10 +15,11 @@ struct sqp_settings_t {
     Scalar tau = 0.5;       /**< line search iteration decrease, 0 < tau < 1 */
     Scalar eta = 0.25;      /**< line search parameter, 0 < eta < 1 */
     Scalar rho = 0.5;       /**< line search parameter, 0 < rho < 1 */
-    Scalar eps_prim = 1e-3; /**< primal step termination threshold, eps_prim > 0 */
-    Scalar eps_dual = 1e-3; /**< dual step termination threshold, eps_dual > 0 */
+    Scalar eps_prim = 1e-4; /**< primal step termination threshold, eps_prim > 0 */
+    Scalar eps_dual = 1e-4; /**< dual step termination threshold, eps_dual > 0 */
     int max_iter = 100;
-    int line_search_max_iter = 100;
+    int line_search_max_iter = 20;
+    bool second_order_correction = false;
     std::function<void(SQP<Scalar>&)> iteration_callback;
 
     bool validate() {
@@ -120,11 +121,17 @@ class SQP {
     bool run_solve_qp(const Matrix& P, const Vector& q, const Matrix& A, const Vector& l,
                       const Vector& u, Vector& prim, Vector& dual);
 
+    /** Second order correction by solving the same QP with corrected constraints. */
+    void second_order_correction(Problem& prob, Vector& p, Vector& lambda);
+
     /** Line search in direction p using l1 merit function. */
     Scalar line_search(Problem& prob, const Vector& p);
 
     /** L1 norm of constraint violation */
     Scalar constraint_norm(const Vector& x, Problem& prob);
+
+    /** L1 norm of constraint violation, for given constraint evaluation */
+    Scalar constraint_norm(const Vector &constr, const Vector &l, const Vector &u) const;
 
     /** L_inf norm of constraint violation */
     Scalar max_constraint_violation(const Vector& x, Problem& prob);

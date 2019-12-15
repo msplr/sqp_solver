@@ -52,34 +52,38 @@ TEST(SQPTestCase, TestSimpleNLP) {
     Eigen::Vector2d x0 = {1.2, 0.1};
     Eigen::Vector3d y0 = Eigen::VectorXd::Zero(3);
 
-    // TODO(mi): doesn't work for higher values
-    solver.settings().line_search_max_iter = 10;
     solver.settings().max_iter = 100;
+    solver.settings().second_order_correction = true;
 
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
 
-    // solver.info().print();
-    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
 }
 
-TEST(SQPTestCase, InfeasibleStart) {
+TEST(SQPTestCase, SimpleNLP_InfeasibleStart) {
     SimpleNLP problem;
     SQP<double> solver;
     Eigen::Vector2d x;
 
     // infeasible initial point
     Eigen::Vector2d x0 = {2, -1};
-    Eigen::Vector3d y0;
-    y0.setOnes();
+    Eigen::Vector3d y0 = {1, 1, 1};
 
     solver.settings().max_iter = 100;
+    solver.settings().second_order_correction = true;
+
     solver.solve(problem, x0, y0);
     x = solver.primal_solution();
+
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(x.isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
@@ -125,11 +129,12 @@ TEST(SQPTestCase, TestSimpleQP) {
     Eigen::VectorXd x0 = Eigen::Vector2d(0,0);
     Eigen::VectorXd y0 = Eigen::Vector3d(0,0,0);
 
+    solver.settings().second_order_correction = true;
     solver.solve(problem, x0, y0);
 
-    // solver.info().print();
-    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);

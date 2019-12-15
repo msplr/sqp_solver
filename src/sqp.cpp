@@ -12,7 +12,7 @@ namespace sqp {
 
 template <typename T>
 SQP<T>::SQP() {
-    // TODO(mi): Success is depends on QP solver settings, which is bad.
+    // TODO(mi): Performance strongly depends on QP solver settings, which is bad.
     qp_solver_.settings().warm_start = true;
     qp_solver_.settings().check_termination = 10;
     qp_solver_.settings().eps_abs = 1e-4;
@@ -196,14 +196,11 @@ void SQP<T>::solve_qp(Problem& prob, Vector& step, Vector& lambda) {
     Vector& q = grad_obj_;
 
     // solve the QP
-    bool ok;
-    ok = run_solve_qp(P, q, A, l, u, step, lambda);
+    run_solve_qp(P, q, A, l, u, step, lambda);
 
-    // if (!ok) {
-    //     Hess_.setIdentity();
-    //     step.setConstant(0.0);
-    //     lambda.setConstant(0.0);
-    // }
+    if (settings_.second_order_correction) {
+        second_order_correction(prob, step, lambda);
+    }
 
     // TODO:
     // B is not convex then use grad_L as step direction
@@ -245,7 +242,39 @@ bool SQP<T>::run_solve_qp(const Matrix& P, const Vector& q, const Matrix& A, con
     return true;
 }
 
-/** Line search in direction p using l1 merit function. */
+template <typename T>
+void SQP<T>::second_order_correction(Problem& prob, Vector& p, Vector& lambda) {
+    // Scalar mu, constr_l1, phi_l1;
+    // constr_l1 = constraint_norm(constr_, l_, u_);
+    // mu = (grad_obj_.dot(p) + 0.5 * p.dot(Hess_ * p)) / ((1 - settings_.rho) * constr_l1);
+    // phi_l1 = obj_ + mu * constr_l1;
+
+    // Scalar obj_step, constr_l1_step, phi_l1_step;
+    // Vector x_step = x_ + p;
+    // prob.objective(x_step, obj_step);
+    // constr_l1_step = constraint_norm(x_step, prob);
+    // phi_l1_step = obj_step + mu * constr_l1_step;
+
+    // printf("phi_l1_step %f  phi_l1 %f  constr_l1_step %f  constr_l1 %f\n", phi_l1_step, phi_l1,
+    //        constr_l1_step, constr_l1);
+    // if (phi_l1_step >= phi_l1 && constr_l1_step >= constr_l1) {
+    {
+        Vector x_step = x_ + p;
+        Vector constr_step(constr_.rows());
+        prob.constraint(x_step, constr_step, l_, u_);
+
+        Matrix& A = Jac_constr_;
+        Matrix& P = Hess_;
+        Vector& q = grad_obj_;
+
+        Vector d = constr_step - A * p;
+        Vector l = l_ - d;
+        Vector u = u_ - d;
+
+        // TODO: only l and u change, possible to update QP solver more efficiently
+        run_solve_qp(P, q, A, l, u, p, lambda);
+    }
+}
 template <typename T>
 typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
     // Note: using members obj_ and grad_obj_, which are updated in solve_qp().
@@ -253,16 +282,17 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
     Scalar mu, phi_l1, Dp_phi_l1;
     const Scalar tau = settings_.tau;  // line search step decrease, 0 < tau < settings.tau
 
-    Scalar constr_l1 = constraint_norm(x_, prob);
+    Scalar constr_l1 = constraint_norm(constr_, l_, u_);
 
-    // TODO: get mu from merit function model using hessian of Lagrangian
-    mu = grad_obj_.dot(p) / ((1 - settings_.rho) * constr_l1);
+    // get mu from merit function model using hessian of Lagrangian instead
+    mu = (grad_obj_.dot(p) + 0.5 * p.dot(Hess_ * p)) / ((1 - settings_.rho) * constr_l1);
 
     phi_l1 = obj_ + mu * constr_l1;
     Dp_phi_l1 = grad_obj_.dot(p) - mu * constr_l1;
 
     Scalar alpha = 1.0;
-    for (int i = 1; i < settings_.line_search_max_iter; i++) {
+    int i;
+    for (i = 1; i < settings_.line_search_max_iter; i++) {
         Scalar obj_step;
         Vector x_step = x_ + alpha * p;
         prob.objective(x_step, obj_step);
@@ -275,25 +305,32 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
             alpha = tau * alpha;
         }
     }
+    // if (i == settings_.line_search_max_iter) {
+    //     alpha = 0;
+    // }
+    // std::cout << "p " << p.transpose() << "  alpha " << alpha << std::endl;
     return alpha;
 }
 
-/** L1 norm of constraint violation */
 template <typename T>
-typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) {
-    // Note: uses members constr_, l_ and u_ as temporary
-
+typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector &constr, const Vector &l, const Vector &u) const {
     Scalar c_l1 = DIV_BY_ZERO_REGUL;
-    prob.constraint(x, constr_, l_, u_);
 
     // l <= c(x) <= u
-    c_l1 += (l_ - constr_).cwiseMax(0.0).sum();
-    c_l1 += (constr_ - u_).cwiseMax(0.0).sum();
+    c_l1 += (l - constr).cwiseMax(0.0).sum();
+    c_l1 += (constr - u).cwiseMax(0.0).sum();
 
     return c_l1;
 }
 
-/** L_inf norm of constraint violation */
+template <typename T>
+typename SQP<T>::Scalar SQP<T>::constraint_norm(const Vector& x, Problem& prob) {
+    // Note: uses members constr_, l_ and u_ as temporary
+    prob.constraint(x, constr_, l_, u_);
+
+    return constraint_norm(constr_, l_, u_);
+}
+
 template <typename T>
 typename SQP<T>::Scalar SQP<T>::max_constraint_violation(const Vector& x, Problem& prob) {
     // Note: uses members constr_, l_ and u_ as temporary

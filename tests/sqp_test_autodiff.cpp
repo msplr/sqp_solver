@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <Eigen/Dense>
-#include <unsupported/Eigen/AutoDiff>
 #include <solvers/sqp.hpp>
+#include <unsupported/Eigen/AutoDiff>
 
 using namespace sqp;
 
@@ -101,21 +101,19 @@ struct ConstrainedRosenbrock2D : public NonLinearProblemAutoDiff<double, Constra
 TEST(SQPAutoDiff, TestConstrainedRosenbrock2D) {
     ConstrainedRosenbrock2D problem;
     SQP<double> solver;
-    Eigen::VectorXd x0 = Eigen::Vector2d(0,0);
+    Eigen::VectorXd x0 = Eigen::Vector2d(0, 0);
     Eigen::VectorXd y0 = Eigen::VectorXd::Zero(2);
 
     solver.settings().max_iter = 100;
     // solver.settings().line_search_max_iter = 10;
-    solver.settings().line_search_max_iter = 100;
+    // solver.settings().second_order_correction = true;
 
     // solver.settings().eta = 0.5;
     solver.solve(problem, x0, y0);
 
-    if (!solver.primal_solution().isApprox(problem.SOLUTION, 1e-2)) {
-        solver.info().print();
-        std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-        std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
-    }
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
@@ -130,8 +128,6 @@ struct Rosenbrock : public NonLinearProblemAutoDiff<double, Rosenbrock> {
         num_var = n;
         num_constr = n;
         SOLUTION = Vector::Ones(n);
-        // num_constr = 0;
-        // num_constr = 1;
     }
 
     template <typename DerivedA, typename DerivedB>
@@ -141,31 +137,29 @@ struct Rosenbrock : public NonLinearProblemAutoDiff<double, Rosenbrock> {
 
     template <typename A, typename B>
     void constraint(const A& x, B& c, Vector& l, Vector& u) {
-        c = x;
-        // const Scalar infinity = std::numeric_limits<Scalar>::infinity();
-        // u.setConstant(infinity);
-        u.setConstant(1e+17);
-        l.setConstant(0.5);
+        c << x;
+        u.setConstant(1);
+        l.setConstant(0);
     }
 };
 
 TEST(SQPAutoDiff, TestRosenbrock) {
-    Rosenbrock problem(2);
-    SQP<double> solver;
+    for (int i = 2; i < 4; i++) {
+        Rosenbrock problem(i);
+        SQP<double> solver;
 
-    solver.settings().max_iter = 100;
-    solver.settings().line_search_max_iter = 10; // causes numerical issues
-    // solver.settings().line_search_max_iter = 100;
-    solver.solve(problem);
+        solver.settings().max_iter = 100;
+        // solver.settings().line_search_max_iter = 100;
+        // solver.settings().second_order_correction = true;
+        solver.solve(problem);
 
-    if (!solver.primal_solution().isApprox(problem.SOLUTION, 1e-2)) {
         solver.info().print();
         std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
         std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
-    }
 
-    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
-    EXPECT_LT(solver.info().iter, solver.settings().max_iter);
+        EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
+        EXPECT_LT(solver.info().iter, solver.settings().max_iter);
+    }
 }
 
 template <typename T>
@@ -208,15 +202,80 @@ TEST(SQPAutoDiff, TestSimpleNLP) {
     Eigen::VectorXd y0 = Eigen::VectorXd::Zero(3);
 
     // TODO(mi): doesn't work for higher values
-    solver.settings().line_search_max_iter = 10;
+    // solver.settings().line_search_max_iter = 10;
     solver.settings().max_iter = 100;
+    solver.settings().second_order_correction = false;
     // solver.settings().iteration_callback = callback<double>;
 
     solver.solve(problem, x0, y0);
 
-    // solver.info().print();
-    // std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
-    // std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+
+    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
+    EXPECT_LT(solver.info().iter, solver.settings().max_iter);
+}
+
+TEST(SQPAutoDiff, TestSimpleNLP_SOC) {
+    SimpleNLP problem;
+    SQP<double> solver;
+
+    // feasible initial point
+    Eigen::VectorXd x0 = Eigen::Vector2d(1.2, 0.1);
+    Eigen::VectorXd y0 = Eigen::VectorXd::Zero(3);
+
+    // TODO(mi): doesn't work for higher values
+    // solver.settings().line_search_max_iter = 10;
+    solver.settings().max_iter = 100;
+    solver.settings().second_order_correction = true;
+    // solver.settings().iteration_callback = callback<double>;
+
+    solver.solve(problem, x0, y0);
+
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
+
+    EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
+    EXPECT_LT(solver.info().iter, solver.settings().max_iter);
+}
+
+/** Example 12.1 from Nonlinear Optimization by Nocedal, Wright */
+struct SimpleNLP2 : public NonLinearProblemAutoDiff<double, SimpleNLP2> {
+    Eigen::Vector2d SOLUTION = {-1, -1};
+
+    SimpleNLP2() {
+        num_var = 2;
+        num_constr = 1;
+    }
+
+    template <typename A, typename B>
+    void objective(const A& x, B& obj) {
+        obj = x.sum();
+    }
+
+    template <typename A, typename B>
+    void constraint(const A& x, B& c, Vector& l, Vector& u) {
+        // x0^2 + x1^2 = 2
+        c << x.squaredNorm();
+        l << 2;
+        u << 2;
+    }
+};
+
+TEST(SQPAutoDiff, TestSimpleNLP2) {
+    SimpleNLP2 problem;
+    SQP<double> solver;
+
+    Eigen::VectorXd x0 = Eigen::Vector2d(1.2, 0.1);
+    Eigen::VectorXd y0 = Eigen::VectorXd::Zero(1);
+
+    solver.solve(problem, x0, y0);
+
+    solver.info().print();
+    std::cout << "primal solution " << solver.primal_solution().transpose() << std::endl;
+    std::cout << "dual solution " << solver.dual_solution().transpose() << std::endl;
 
     EXPECT_TRUE(solver.primal_solution().isApprox(problem.SOLUTION, 1e-2));
     EXPECT_LT(solver.info().iter, solver.settings().max_iter);
