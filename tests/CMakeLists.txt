@@ -3,6 +3,8 @@ project(solver_test VERSION 0.1.0 LANGUAGES CXX)
 
 find_package(GTest REQUIRED)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 add_executable(
     tests
     qp_solver_test.cpp

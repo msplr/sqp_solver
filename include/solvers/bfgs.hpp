@@ -12,8 +12,7 @@
  * @param[in]       y gradient change (grad - grad_prev)
  */
 template <typename Mat, typename Vec>
-void BFGS_update(Mat& B, const Vec& s, const Vec& y)
-{
+void BFGS_update(Mat& B, const Vec& s, const Vec& y) {
     using Scalar = typename Mat::Scalar;
     Scalar sy, sr, sBs;
     Vec Bs, r;
@@ -40,5 +39,9 @@ void BFGS_update(Mat& B, const Vec& s, const Vec& y)
 
     B.noalias() += -Bs * Bs.transpose() / sBs + r * r.transpose() / sr;
 }
+
+// extern template void BFGS_update<Eigen::MatrixXd, Eigen::VectorXd>(Eigen::MatrixXd& B,
+//                                                                    const Eigen::VectorXd& s,
+//                                                                    const Eigen::VectorXd& y)
 
 #endif /* BFGS_HPP */
