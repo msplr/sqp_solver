@@ -165,7 +165,7 @@ TEST(SQPAutoDiff, TestRosenbrock) {
 template <typename T>
 void callback(SQP<T>& solver) {
     Eigen::IOFormat fmt(Eigen::StreamPrecision, 0, ", ", ",", "[", "],");
-    std::cout << solver.x_.transpose().format(fmt) << std::endl;
+    std::cout << solver.x_.transpose().format(fmt) << '\n';
 }
 
 struct SimpleNLP : public NonLinearProblemAutoDiff<double, SimpleNLP> {

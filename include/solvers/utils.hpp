@@ -9,11 +9,11 @@ template <typename qp_t>
 void print_qp(qp_t qp)
 {
     Eigen::IOFormat fmt(Eigen::StreamPrecision, 0, ", ", ",", "[", "]", "[", "]");
-    std::cout << "P = " << qp.P.format(fmt) << std::endl;
-    std::cout << "q = " << qp.q.transpose().format(fmt) << std::endl;
-    std::cout << "A = " << qp.A.format(fmt) << std::endl;
-    std::cout << "l = " << qp.l.transpose().format(fmt) << std::endl;
-    std::cout << "u = " << qp.u.transpose().format(fmt) << std::endl;
+    std::cout << "P = " << qp.P.format(fmt) << '\n';
+    std::cout << "q = " << qp.q.transpose().format(fmt) << '\n';
+    std::cout << "A = " << qp.A.format(fmt) << '\n';
+    std::cout << "l = " << qp.l.transpose().format(fmt) << '\n';
+    std::cout << "u = " << qp.u.transpose().format(fmt) << '\n';
 }
 
 template <typename Mat>

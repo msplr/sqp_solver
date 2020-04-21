@@ -170,7 +170,7 @@ void SQP<T>::solve_qp(Problem& prob, Vector& step, Vector& lambda) {
     }
 
     if (!is_posdef(Hess_)) {
-        std::cout << "Hessian not positive definite" << std::endl;
+        std::cout << "Hessian not positive definite\n";
         Scalar tau = 1e-3;
         Vector v = Vector(prob.num_var);
         while (!is_posdef(Hess_)) {
@@ -180,7 +180,7 @@ void SQP<T>::solve_qp(Problem& prob, Vector& step, Vector& lambda) {
         }
     }
     if (is_nan(Hess_)) {
-        std::cout << "Hessian is NaN" << std::endl;
+        std::cout << "Hessian is NaN\n";
     }
 
     SOLVER_ASSERT(is_posdef(Hess_));
@@ -219,17 +219,16 @@ bool SQP<T>::run_solve_qp(const Matrix& P, const Vector& q, const Matrix& A, con
     qp_.u = &u;
 
     qp_solver_.setup(qp_);
-    // qp_solver_.update_qp(qp_);
     qp_solver_.solve(qp_);
 
     info_.qp_solver_iter += qp_solver_.info().iter;
 
     if (qp_solver_.info().status == qp_solver::NUMERICAL_ISSUES) {
-        printf("QPSolver NUMERICAL_ISSUES\n");
+        std::cout << "QPSolver NUMERICAL_ISSUES\n";
         return false;
     }
     // if (qp_solver_.info().status == qp_solver::MAX_ITER_EXCEEDED) {
-    //     printf("QPSolver MAX_ITER_EXCEEDED\n");
+    //     std::cout << "QPSolver MAX_ITER_EXCEEDED\n";
     //     return false;
     // }
 
@@ -305,10 +304,6 @@ typename SQP<T>::Scalar SQP<T>::line_search(Problem& prob, const Vector& p) {
             alpha = tau * alpha;
         }
     }
-    // if (i == settings_.line_search_max_iter) {
-    //     alpha = 0;
-    // }
-    // std::cout << "p " << p.transpose() << "  alpha " << alpha << std::endl;
     return alpha;
 }
 
